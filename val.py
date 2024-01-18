@@ -59,6 +59,8 @@ from utils.general import (
 from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, smart_inference_mode
+from utils.throughput_latency import measure_gpu_throughput, measure_latency_cpu_usage
+import statistics
 
 
 def save_one_txt(predn, save_conf, shape, file):
@@ -210,13 +212,15 @@ def run(
     if isinstance(names, (list, tuple)):  # old format
         names = dict(enumerate(names))
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ("%22s" + "%11s" * 6) % ("Class", "Images", "Instances", "P", "R", "mAP50", "mAP50-95")
+    s = ("%22s" + "%11s" * 8) % ("Class", "Images", "Instances", "P", "R", "mAP50", "mAP50-95", "Throughput", "Latency")
     tp, fp, p, r, f1, mp, mr, map50, ap50, map = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     dt = Profile(device=device), Profile(device=device), Profile(device=device)  # profiling times
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run("on_val_start")
     pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
+    throughput_lst = []
+    latency_lst = []
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         callbacks.run("on_val_batch_start")
         with dt[0]:
@@ -230,6 +234,10 @@ def run(
         # Inference
         with dt[1]:
             preds, train_out = model(im) if compute_loss else (model(im, augment=augment), None)
+            throughput = measure_gpu_throughput(model, im)
+            throughput_lst.append(throughput)
+            latency = measure_latency_cpu_usage(model, im)
+            latency_lst.append(latency)
 
         # Loss
         if compute_loss:
@@ -298,8 +306,10 @@ def run(
     nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
 
     # Print results
-    pf = "%22s" + "%11i" * 2 + "%11.3g" * 4  # print format
-    LOGGER.info(pf % ("all", seen, nt.sum(), mp, mr, map50, map))
+    throughput_avg = statistics.mean(throughput_lst)
+    latency_avg = statistics.mean(latency_lst)
+    pf = "%22s" + "%11i" * 2 + "%11.3g" * 6  # print format
+    LOGGER.info(pf % ("all", seen, nt.sum(), mp, mr, map50, map, throughput_avg, latency_avg))
     if nt.sum() == 0:
         LOGGER.warning(f"WARNING ⚠️ no labels found in {task} set, can not compute metrics without labels")
 
