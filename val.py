@@ -210,12 +210,12 @@ def run(
 
         # Inference
         with dt[1]:
+            preds, train_out = model(im) if compute_loss else (model(im , augment=augment), None)
             throughput = measure_gpu_throughput(model, im)
             throughput_lst.append(throughput)
             latency = measure_latency_cpu_usage(model, im)
             latency_lst.append(latency)
-            preds, train_out = model(im) if compute_loss else (model(im , augment=augment), None)
-
+            
         # Loss
         if compute_loss:
             loss += compute_loss(train_out, targets)[1]  # box, obj, cls
