@@ -322,11 +322,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
             # Forward
             with torch.cuda.amp.autocast(amp):
+                pred = model(imgs)  # forward
                 throughput = measure_gpu_throughput(model, imgs)
                 throughput_lst.append(throughput)
                 latency = measure_latency_cpu_usage(model, imgs)
                 latency_lst.append(latency)
-                pred = model(imgs)  # forward
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
